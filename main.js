@@ -2,6 +2,7 @@ const {
   ItemView,
   Keymap,
   MarkdownView,
+  Menu,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -117,6 +118,12 @@ class RecentsView extends ItemView {
       row.addEventListener("auxclick", (evt) => {
         if (evt.button === 1) this.app.workspace.getLeaf("tab").openFile(entry.file);
       });
+      row.addEventListener("contextmenu", (evt) => {
+        evt.preventDefault();
+        const menu = new Menu();
+        this.app.workspace.trigger("file-menu", menu, entry.file, "date-maj-view");
+        menu.showAtMouseEvent(evt);
+      });
       this.rows.set(entry.file.path, row);
     }
     this.highlight();
@@ -168,11 +175,25 @@ module.exports = class DateMaj extends Plugin {
         checkCallback: (checking) => {
           const view = this.app.workspace.getActiveViewOfType(MarkdownView);
           if (!view || !isTarget(view.file)) return false;
-          if (!checking) this.mark(view, kind);
+          if (!checking) this.mark(view.file, kind);
           return true;
         },
       });
     }
+
+    // Clic droit sur une note (explorateur, vue par date, menu de la note)
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!isTarget(file) || !this.footers.get(file.path)?.maj) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Marquer lue à la date de mise à jour")
+            .setIcon("calendar-check")
+            .setSection("action")
+            .onClick(() => this.mark(file, "lu-maj"))
+        );
+      })
+    );
 
     // Vue « par date »
     this.registerView(VIEW_TYPE, (leaf) => new RecentsView(leaf, this));
@@ -227,36 +248,44 @@ module.exports = class DateMaj extends Plugin {
       const view = leaf.view;
       if (!(view instanceof MarkdownView) || this.viewsWithActions.has(view)) continue;
       // addAction insère à gauche : ordre affiché Maj, Lu partiellement, Lu
-      view.addAction("book-open-check", "Marquer comme lue", () => this.mark(view, "lu")).addClass("date-maj-action");
-      view.addAction("book-open", "Marquer comme lue partiellement", () => this.mark(view, "partiel")).addClass("date-maj-action");
-      view.addAction("refresh-cw", "Marquer comme mise à jour", () => this.mark(view, "maj")).addClass("date-maj-action");
+      view.addAction("book-open-check", "Marquer comme lue", () => this.mark(view.file, "lu")).addClass("date-maj-action");
+      view.addAction("book-open", "Marquer comme lue partiellement", () => this.mark(view.file, "partiel")).addClass("date-maj-action");
+      view.addAction("refresh-cw", "Marquer comme mise à jour", () => this.mark(view.file, "maj")).addClass("date-maj-action");
       this.viewsWithActions.add(view);
     }
   }
 
-  async mark(view, kind) {
-    const file = view.file;
+  async mark(file, kind) {
     if (!isTarget(file)) return;
+    let day = todayDay();
     const transform = (text) => {
       const footer = parseFooter(text);
-      if (kind === "maj") footer.maj = { day: todayDay(), model: this.settings.model };
-      else footer.lu = { day: todayDay(), partial: kind === "partiel" };
+      if (kind === "maj") footer.maj = { day, model: this.settings.model };
+      else if (kind === "lu-maj") {
+        if (!footer.maj) return text;
+        day = footer.maj.day;
+        footer.lu = { day, partial: false };
+      } else footer.lu = { day, partial: kind === "partiel" };
       return composeFooter(footer);
     };
 
-    if (view.getMode() === "source" && view.editor) {
-      // Via l'éditeur pour ne pas perdre une frappe pas encore enregistrée
+    // Note ouverte en édition : via l'éditeur pour ne pas perdre une frappe pas encore enregistrée
+    const view = this.app.workspace
+      .getLeavesOfType("markdown")
+      .map((leaf) => leaf.view)
+      .find((v) => v instanceof MarkdownView && v.file === file && v.getMode() === "source" && v.editor);
+    if (view) {
       const editor = view.editor;
       const old = editor.getValue();
       const next = transform(old);
       let p = 0;
       while (p < old.length && p < next.length && old[p] === next[p]) p++;
-      editor.replaceRange(next.slice(p), editor.offsetToPos(p), editor.offsetToPos(old.length));
+      if (next !== old) editor.replaceRange(next.slice(p), editor.offsetToPos(p), editor.offsetToPos(old.length));
     } else {
       await this.app.vault.process(file, transform);
     }
-    const labels = { maj: "Mise à jour", lu: "Lue", partiel: "Lue partiellement" };
-    new Notice(`${labels[kind]} : ${format(new Date())}`);
+    const labels = { maj: "Mise à jour", lu: "Lue", partiel: "Lue partiellement", "lu-maj": "Lue" };
+    new Notice(`${labels[kind]} : ${format(new Date(day))}`);
   }
 
   // ---------- Vue par date ----------
