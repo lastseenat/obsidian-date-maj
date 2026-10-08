@@ -50,6 +50,30 @@ function composeFooter({ base, maj, lu }) {
   return `${base ? `${base}\n\n` : ""}${footer.join("\n")}\n`;
 }
 
+// Marque de lecture d'un passage, en exposant en fin de ligne : <sup class="lu">👁️ 08/10/2026</sup>
+const PASSAGE = / ?<sup class="lu">👁️ \d{2}\/\d{2}\/\d{4}<\/sup>/u;
+const BLOCK_ID = /(\s\^[A-Za-z0-9-]+)$/;
+
+// Renvoie le texte modifié, ou un message d'erreur (string commençant par "!")
+function markPassage(text, n, date) {
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(eol);
+  const line = lines[n];
+  if (line === undefined || !line.trim()) return "!Ligne vide";
+  if (/^#{1,6}\s/.test(line)) return "!Pas sur un titre (les liens vers les titres casseraient)";
+  if (/^\s*\|/.test(line)) return "!Pas dans un tableau";
+  if (MAJ.test(line) || LU.test(line)) return "!Pas sur le pied de dates";
+  const fences = lines.slice(0, n).filter((l) => /^\s*(```|~~~)/.test(l)).length;
+  if (fences % 2 === 1 || /^\s*(```|~~~)/.test(line)) return "!Pas dans un bloc de code";
+  let next = line.replace(PASSAGE, "");
+  if (date) {
+    const mark = ` <sup class="lu">👁️ ${date}</sup>`;
+    next = BLOCK_ID.test(next) ? next.replace(BLOCK_ID, `${mark}$1`) : next.replace(/\s*$/, mark);
+  }
+  lines[n] = next;
+  return lines.join(eol);
+}
+
 const todayDay = () => {
   const d = new Date();
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -195,6 +219,27 @@ module.exports = class DateMaj extends Plugin {
       })
     );
 
+    // Marque de lecture d'un passage : clic droit en édition et en lecture
+    this.sectionContexts = new WeakMap();
+    this.registerMarkdownPostProcessor((el, ctx) => this.sectionContexts.set(el, ctx));
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor, view) => {
+        if (!isTarget(view.file)) return;
+        const n = editor.getCursor("to").line;
+        this.addPassageItems(menu, view.file, n, editor.getLine(n));
+      })
+    );
+    this.registerDomEvent(document, "contextmenu", (evt) => this.onReadingContextMenu(evt));
+    this.addCommand({
+      id: "marquer-passage-lu",
+      name: "Marquer le passage comme lu",
+      editorCheckCallback: (checking, editor, view) => {
+        if (!isTarget(view.file)) return false;
+        if (!checking) this.markPassage(view.file, editor.getCursor("to").line, true);
+        return true;
+      },
+    });
+
     // Vue « par date »
     this.registerView(VIEW_TYPE, (leaf) => new RecentsView(leaf, this));
     this.addRibbonIcon("history", "Notes par date", () => this.revealView());
@@ -286,6 +331,77 @@ module.exports = class DateMaj extends Plugin {
     }
     const labels = { maj: "Mise à jour", lu: "Lue", partiel: "Lue partiellement", "lu-maj": "Lue" };
     new Notice(`${labels[kind]} : ${format(new Date(day))}`);
+  }
+
+  // ---------- Marque de lecture d'un passage ----------
+
+  addPassageItems(menu, file, n, line) {
+    menu.addItem((item) =>
+      item
+        .setTitle("Marquer ce passage comme lu")
+        .setIcon("eye")
+        .setSection("action")
+        .onClick(() => this.markPassage(file, n, true))
+    );
+    if (PASSAGE.test(line || "")) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Retirer la marque de lecture")
+          .setIcon("eye-off")
+          .setSection("action")
+          .onClick(() => this.markPassage(file, n, false))
+      );
+    }
+  }
+
+  // Mode lecture : retrouve la ligne source du bloc cliqué
+  onReadingContextMenu(evt) {
+    if (evt.defaultPrevented) return;
+    const target = evt.target;
+    if (!(target instanceof Element) || !target.closest(".markdown-reading-view")) return;
+    if (target.closest("a, img, .internal-embed") || window.getSelection()?.toString()) return;
+    const view = this.app.workspace
+      .getLeavesOfType("markdown")
+      .map((leaf) => leaf.view)
+      .find((v) => v instanceof MarkdownView && v.containerEl.contains(target));
+    if (!view || !isTarget(view.file)) return;
+
+    let el = target;
+    while (el && !this.sectionContexts.has(el)) el = el.parentElement;
+    const info = el && this.sectionContexts.get(el).getSectionInfo(el);
+    if (!info) return;
+    const li = target.closest("li[data-line]");
+    const n = li && el.contains(li) ? info.lineStart + Number(li.getAttribute("data-line")) : info.lineEnd;
+    const line = info.text.split(/\r?\n/)[n];
+
+    evt.preventDefault();
+    const menu = new Menu();
+    this.addPassageItems(menu, view.file, n, line);
+    menu.showAtMouseEvent(evt);
+  }
+
+  async markPassage(file, n, add) {
+    const date = add ? format(new Date()) : null;
+    let error = null;
+    const transform = (text) => {
+      const next = markPassage(text, n, date);
+      if (next.startsWith("!")) {
+        error = next.slice(1);
+        return text;
+      }
+      return next;
+    };
+    const view = this.app.workspace
+      .getLeavesOfType("markdown")
+      .map((leaf) => leaf.view)
+      .find((v) => v instanceof MarkdownView && v.file === file && v.getMode() === "source" && v.editor);
+    if (view) {
+      const next = transform(view.editor.getValue());
+      if (!error) view.editor.setLine(n, next.split(/\r?\n/)[n]);
+    } else {
+      await this.app.vault.process(file, transform);
+    }
+    new Notice(error || (add ? `Passage lu : ${date}` : "Marque de lecture retirée"));
   }
 
   // ---------- Vue par date ----------

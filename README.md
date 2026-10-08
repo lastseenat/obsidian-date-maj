@@ -11,6 +11,7 @@ Pied de note daté, posé à la main :
 - Le modèle ajouté à la date Maj se règle dans les paramètres du module
 - Vue latérale **Par date** (icône horloge) : notes triées par date de mise à jour ou de lecture
 - Clic droit sur une note : **Marquer lue à la date de mise à jour**
+- Clic droit sur un paragraphe ou une puce (lecture ou édition) : **Marquer ce passage comme lu**, qui ajoute une date discrète en exposant en fin de ligne
 
 ## Installation avec BRAT
 

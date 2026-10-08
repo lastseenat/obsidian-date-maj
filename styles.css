@@ -43,3 +43,12 @@
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
 }
+
+/* Marque de lecture d'un passage */
+sup.lu {
+  margin-left: 0.3em;
+  color: var(--text-faint);
+  font-size: 0.65em;
+  font-weight: var(--font-normal);
+  white-space: nowrap;
+}
