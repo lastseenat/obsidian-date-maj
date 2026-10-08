@@ -1,0 +1,45 @@
+.date-maj-recents {
+  padding: 0;
+}
+
+.date-maj-recents .nav-header {
+  padding: var(--size-4-2);
+}
+
+.date-maj-list {
+  padding: 0 var(--size-4-2) var(--size-4-4);
+}
+
+.date-maj-row {
+  display: flex;
+  gap: var(--size-4-3);
+  align-items: baseline;
+  padding: var(--size-2-2) var(--size-4-2);
+  border-radius: var(--radius-s);
+}
+
+.date-maj-date {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.date-maj-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-maj-row.is-active {
+  background-color: var(--nav-item-background-active);
+  color: var(--nav-item-color-active);
+}
+
+.date-maj-tag {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
