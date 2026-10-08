@@ -216,6 +216,14 @@ module.exports = class DateMaj extends Plugin {
             .setSection("action")
             .onClick(() => this.mark(file, "lu-maj"))
         );
+        if (!this.footers.get(file.path)?.lu) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("Inverser dates de lecture et de mise à jour")
+            .setIcon("arrow-up-down")
+            .setSection("action")
+            .onClick(() => this.mark(file, "inverser"))
+        );
       })
     );
 
@@ -303,6 +311,7 @@ module.exports = class DateMaj extends Plugin {
   async mark(file, kind) {
     if (!isTarget(file)) return;
     let day = todayDay();
+    let swapped = null;
     const transform = (text) => {
       const footer = parseFooter(text);
       if (kind === "maj") footer.maj = { day, model: this.settings.model };
@@ -310,6 +319,11 @@ module.exports = class DateMaj extends Plugin {
         if (!footer.maj) return text;
         day = footer.maj.day;
         footer.lu = { day, partial: false };
+      } else if (kind === "inverser") {
+        // Seules les dates s'échangent : le modèle et « partiellement » restent en place
+        if (!footer.maj || !footer.lu) return text;
+        [footer.maj.day, footer.lu.day] = [footer.lu.day, footer.maj.day];
+        swapped = `Maj ${format(new Date(footer.maj.day))} · Lu ${format(new Date(footer.lu.day))}`;
       } else footer.lu = { day, partial: kind === "partiel" };
       return composeFooter(footer);
     };
@@ -330,7 +344,7 @@ module.exports = class DateMaj extends Plugin {
       await this.app.vault.process(file, transform);
     }
     const labels = { maj: "Mise à jour", lu: "Lue", partiel: "Lue partiellement", "lu-maj": "Lue" };
-    new Notice(`${labels[kind]} : ${format(new Date(day))}`);
+    new Notice(kind === "inverser" ? swapped || "Dates Maj et Lu nécessaires" : `${labels[kind]} : ${format(new Date(day))}`);
   }
 
   // ---------- Marque de lecture d'un passage ----------
