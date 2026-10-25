@@ -52,3 +52,57 @@ sup.lu {
   font-weight: var(--font-normal);
   white-space: nowrap;
 }
+
+/* Barre flottante Maj / Lu (téléphone) */
+.date-maj-fab {
+  position: fixed;
+  right: var(--size-4-3);
+  bottom: calc(var(--mobile-navbar-height, 56px) + env(safe-area-inset-bottom, 0px) + var(--size-4-3));
+  z-index: var(--layer-popover, 30);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--size-4-2);
+}
+
+.date-maj-fab.is-hidden,
+.date-maj-fab-panel {
+  display: none;
+}
+
+.date-maj-fab.is-open .date-maj-fab-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--size-4-2);
+}
+
+.date-maj-fab button {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  height: auto;
+  padding: var(--size-4-2) var(--size-4-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-xl, 24px);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  box-shadow: var(--shadow-s);
+}
+
+.date-maj-fab button .svg-icon {
+  width: var(--icon-s, 16px);
+  height: var(--icon-s, 16px);
+}
+
+.date-maj-fab .date-maj-fab-toggle {
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  opacity: 0.75;
+}
+
+.date-maj-fab.is-open .date-maj-fab-toggle {
+  opacity: 1;
+}

@@ -4,6 +4,7 @@ const {
   MarkdownView,
   Menu,
   Notice,
+  Platform,
   Plugin,
   PluginSettingTab,
   Setting,
@@ -19,7 +20,8 @@ const MAJ = /^🔄 Maj (\d{2})\/(\d{2})\/(\d{4})(?: \((.+)\))?\s*$/u;
 const LU = /^\u{1F441}️? Lu( partiellement)? (\d{2})\/(\d{2})\/(\d{4})\s*$/u;
 const EXCLUDED = new Set(["AGENTS.md"]);
 const VIEW_TYPE = "date-maj-recents";
-const DEFAULT_SETTINGS = { model: "Opus 5.5", newestFirst: false, mode: "maj", viewCreated: false };
+// floatingBar : null = automatique (téléphone oui, ordinateur non)
+const DEFAULT_SETTINGS = { model: "Opus 5.5", newestFirst: false, mode: "maj", viewCreated: false, floatingBar: null };
 
 const pad = (n) => String(n).padStart(2, "0");
 const format = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
@@ -174,6 +176,12 @@ class DateMajSettingTab extends PluginSettingTab {
       .addText((text) =>
         text.setValue(this.plugin.settings.model).onChange((value) => this.plugin.updateSettings({ model: value.trim() }))
       );
+    new Setting(this.containerEl)
+      .setName("Barre flottante Maj / Lu")
+      .setDesc("Bouton en bas à droite de la note qui déplie les trois boutons. Activée par défaut sur téléphone, pas sur ordinateur.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.floatingBarEnabled()).onChange((value) => this.plugin.updateSettings({ floatingBar: value }))
+      );
   }
 }
 
@@ -254,6 +262,11 @@ module.exports = class DateMaj extends Plugin {
     this.addCommand({ id: "ouvrir-vue", name: "Afficher les notes par date", callback: () => this.revealView() });
     this.addSettingTab(new DateMajSettingTab(this.app, this));
 
+    // Barre flottante : suit la note active
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncFab()));
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncFab()));
+    this.app.workspace.onLayoutReady(() => this.syncFab());
+
     this.app.workspace.onLayoutReady(async () => {
       // Après le chargement : Obsidian émet un « create » par fichier au démarrage
       this.registerEvent(this.app.vault.on("modify", (file) => this.index(file)));
@@ -286,12 +299,55 @@ module.exports = class DateMaj extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       leaf.view.actionsEl?.querySelectorAll(".date-maj-action").forEach((el) => el.remove());
     }
+    this.fab?.remove();
   }
 
   async updateSettings(patch) {
     Object.assign(this.settings, patch);
     await this.saveData(this.settings);
     this.refreshViews(true);
+    this.syncFab();
+  }
+
+  // ---------- Barre flottante (téléphone) ----------
+  // Sur téléphone, les boutons de l'en-tête sont rangés dans le menu « … » : ce bouton les garde sous la main
+
+  floatingBarEnabled() {
+    return this.settings.floatingBar ?? Platform.isMobile;
+  }
+
+  syncFab() {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!this.floatingBarEnabled() || !view || !isTarget(view.file)) {
+      this.fab?.addClass("is-hidden");
+      return;
+    }
+    if (!this.fab) this.buildFab();
+    this.fab.removeClass("is-hidden");
+  }
+
+  buildFab() {
+    const fab = document.body.createDiv("date-maj-fab");
+    const panel = fab.createDiv("date-maj-fab-panel");
+    const actions = [
+      ["refresh-cw", "Mise à jour", "maj"],
+      ["book-open", "Lue en partie", "partiel"],
+      ["book-open-check", "Lue", "lu"],
+    ];
+    for (const [icon, label, kind] of actions) {
+      const button = panel.createEl("button", { cls: "date-maj-fab-button" });
+      setIcon(button.createSpan(), icon);
+      button.createSpan({ text: label });
+      button.addEventListener("click", () => {
+        fab.removeClass("is-open");
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view) this.mark(view.file, kind);
+      });
+    }
+    const toggle = fab.createEl("button", { cls: "date-maj-fab-toggle", attr: { "aria-label": "Mise à jour et lecture" } });
+    setIcon(toggle, "eye");
+    toggle.addEventListener("click", () => fab.toggleClass("is-open", !fab.hasClass("is-open")));
+    this.fab = fab;
   }
 
   // ---------- Boutons Maj / Lu ----------
